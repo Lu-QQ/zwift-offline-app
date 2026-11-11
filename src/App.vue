@@ -6,11 +6,13 @@ import SetupView from "./views/SetupView.vue";
 import ServiceView from "./views/ServiceView.vue";
 import SyncView from "./views/SyncView.vue";
 import RestoreView from "./views/RestoreView.vue";
+import ChangelogView from "./views/ChangelogView.vue";
 
 // 首次启动(未完成引导)时显示引导页
 const wizardMode = ref(localStorage.getItem("wizard_done") !== "1");
-const tab = ref<"setup" | "service" | "sync" | "restore">("setup");
+const tab = ref<"setup" | "service" | "sync" | "restore" | "update">("setup");
 const running = ref(false);
+const updateTip = ref("");
 let unlistenExit: (() => void) | null = null;
 let timer: number | undefined;
 
@@ -27,6 +29,13 @@ onMounted(async () => {
   await refresh();
   timer = window.setInterval(refresh, 2500);
   unlistenExit = await api.onServiceExited(refresh);
+  // 启动静默检查更新,有新版在侧栏顶部提示
+  api.checkUpdate().then(
+    (u) => {
+      if (u) updateTip.value = `🔄 有新版 v${u.version},到「检查更新」页安装`;
+    },
+    () => {}
+  );
 });
 onUnmounted(() => {
   unlistenExit?.();
@@ -55,7 +64,13 @@ onUnmounted(() => {
     <div class="nav-item" :class="{ active: tab === 'restore' }" @click="tab = 'restore'">
       ↩️ 还原官方
     </div>
+    <div class="nav-item" :class="{ active: tab === 'update' }" @click="tab = 'update'">
+      🔄 检查更新
+    </div>
     <div class="spacer" />
+    <div v-if="updateTip" style="color: var(--warn); font-size: 11.5px; padding: 0 10px 6px; line-height: 1.5">
+      {{ updateTip }}
+    </div>
     <div class="nav-item" style="font-size: 12px" @click="wizardMode = true">
       📖 重新运行引导
     </div>
@@ -68,6 +83,7 @@ onUnmounted(() => {
     <SetupView v-if="tab === 'setup'" />
     <ServiceView v-else-if="tab === 'service'" />
     <SyncView v-else-if="tab === 'sync'" />
+    <ChangelogView v-else-if="tab === 'update'" />
     <RestoreView v-else />
   </main>
   </template>

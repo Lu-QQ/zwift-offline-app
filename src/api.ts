@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 
 export interface Settings {
   engine_path: string | null;
@@ -73,4 +75,9 @@ export const api = {
     listen<string>("service:exited", (e) => cb(e.payload)),
   onConfigProgress: (cb: (r: StepResult) => void): Promise<UnlistenFn> =>
     listen<StepResult>("config:progress", (e) => cb(e.payload)),
+  checkUpdate: () => check(),
+  installUpdate: async (u: Update) => {
+    await u.downloadAndInstall();
+    await relaunch();
+  },
 };
