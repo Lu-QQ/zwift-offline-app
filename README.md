@@ -37,6 +37,24 @@ npm run tauri dev     # 开发模式(不提权,配置操作会提示需要管理
 npm run tauri build   # 打包:Windows 出 NSIS 安装包,macOS 出 dmg
 ```
 
+## 发新版(维护者指南)
+
+1. 改版本号三处:`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`,并在 `CHANGELOG.md` 顶部加一段
+2. 带签名构建(更新包必须 minisign 签名,私钥在 `~/.tauri/zoffline-launcher.key`,**务必备份**):
+   ```bash
+   export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/zoffline-launcher.key)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+   npm run tauri build
+   ```
+3. 生成 `latest.json`:`version`、`notes`、`platforms.windows-x86_64.signature`(取 `.exe.sig` 内容)、`url`(指向新 release 的 exe,建议用 ghfast 加速前缀)
+4. 推送 main + tag,发 GitHub Release,上传三个资产:**exe、exe.sig、latest.json**
+5. 验证:`curl -sL https://gh-proxy.com/https://github.com/Lu-QQ/zwift-offline-app/releases/latest/download/latest.json` 应返回新版本号
+
+> 国内用户更新走 ghfast/gh-proxy 镜像(编译期固化在 tauri.conf.json 的 endpoints,换源需发新版)。
+
+## 卸载说明
+
+卸载启动器**不会**自动还原系统修改(hosts 重定向、根证书、Zwift cacert.pem 备份仍在)。卸载前请先在「↩️ 还原官方」页执行一键还原。
+
 ## 使用说明(小白版)
 
 1. **安装**:Windows 下载安装包,右键"以管理员身份运行"(安装包本身也会请求管理员);macOS 拖进应用程序

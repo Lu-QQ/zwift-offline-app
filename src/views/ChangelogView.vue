@@ -37,7 +37,9 @@ async function install() {
   try {
     const update = await api.checkUpdate();
     if (update) {
-      await api.installUpdate(update);
+      await api.installUpdate(update, (pct) => {
+        progress.value = pct >= 100 ? "安装中,即将重启…" : `下载中 ${pct}%`;
+      });
     }
   } catch (e) {
     error.value = `安装失败:${String(e)}`;

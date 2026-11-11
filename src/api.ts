@@ -76,8 +76,23 @@ export const api = {
   onConfigProgress: (cb: (r: StepResult) => void): Promise<UnlistenFn> =>
     listen<StepResult>("config:progress", (e) => cb(e.payload)),
   checkUpdate: () => check(),
-  installUpdate: async (u: Update) => {
-    await u.downloadAndInstall();
+  installUpdate: async (u: Update, onProgress?: (pct: number) => void) => {
+    let total = 0;
+    let done = 0;
+    await u.downloadAndInstall((event) => {
+      switch (event.event) {
+        case "Started":
+          total = event.data.contentLength ?? 0;
+          break;
+        case "Progress":
+          done += event.data.chunkLength ?? 0;
+          if (total > 0) onProgress?.(Math.min(99, Math.round((done / total) * 100)));
+          break;
+        case "Finished":
+          onProgress?.(100);
+          break;
+      }
+    });
     await relaunch();
   },
 };
