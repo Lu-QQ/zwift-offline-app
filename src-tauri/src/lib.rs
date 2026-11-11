@@ -31,14 +31,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .on_window_event(|window, event| {
-            // 官方登录窗口被直接关闭时兜底恢复 hosts(无状态去前缀,幂等)
-            if let tauri::WindowEvent::Destroyed = event {
-                if window.label() == "zwift-login" {
-                    let _ = util::hosts_restore_suspended();
-                }
-            }
-        })
         .setup(|app| {
             // 上次进程异常退出留下的 hosts 挂起残留,启动时自愈
             let _ = util::hosts_restore_suspended();
@@ -84,8 +76,6 @@ pub fn run() {
             zwiftsync::zwift_sync_status,
             zwiftsync::zwift_sync_save,
             zwiftsync::zwift_sync_clear,
-            zwiftsync::zwift_login_window,
-            zwiftsync::zwift_login_cleanup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

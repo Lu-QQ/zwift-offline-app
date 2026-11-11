@@ -1,6 +1,6 @@
 [package]
 name = "zoffline-launcher"
-version = "1.0.0"
+version = "1.0.1"
 description = "zoffline 小白向导启动器"
 authors = ["luqianqi"]
 edition = "2024"

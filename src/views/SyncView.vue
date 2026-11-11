@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { api, type StravaStatus, type ZwiftSyncStatus } from "../api";
 
 // ---------- Strava ----------
@@ -13,16 +13,9 @@ const zwiftUser = ref("");
 const zwiftPass = ref("");
 const zwiftVerify = ref(true);
 const zwiftBusy = ref(false);
-const loginWindowBusy = ref(false);
 
 const message = ref("");
 const error = ref("");
-
-// 官方登录窗口捕获到的凭据(提交成功才采用)
-let latestCred = { u: "", p: "" };
-let uncred: (() => void) | null = null;
-let unok: (() => void) | null = null;
-let unfail: (() => void) | null = null;
 
 async function refresh() {
   try {
@@ -33,17 +26,8 @@ async function refresh() {
   } catch { /* ignore */ }
 }
 
-async function openOfficialLogin() {
-  error.value = "";
-  message.value = "正在打开 Zwift 官方登录窗口…请直接在官方页面里登录,成功后会自动保存。";
-  loginWindowBusy.value = true;
-  try {
-    await api.zwiftLoginWindow();
-  } catch (e) {
-    error.value = String(e) + "(打开官方页面失败一般是因为 hosts 劫持需要管理员权限来临时绕开)";
-  } finally {
-    loginWindowBusy.value = false;
-  }
+function openOfficialLogin() {
+  api.openUrl("https://www.zwift.com/sign-in");
 }
 
 async function authorize() {
@@ -94,40 +78,7 @@ function fmtExpires(ts: number | null) {
   return new Date(ts * 1000).toLocaleString("zh-CN");
 }
 
-onMounted(async () => {
-  await refresh();
-  // 登录窗口输入时持续上报,记录最新值
-  uncred = await api.onZwiftCred((c) => (latestCred = c));
-  // 官方页面登录成功(页面跳转)→ 自动保存(无需再验证,官方刚验证过)
-  unok = await api.onZwiftLoginSuccess(async (c) => {
-    const u = c.u || latestCred.u;
-    const p = c.p || latestCred.p;
-    if (!u || !p) {
-      message.value = "检测到登录成功,但没能读取到账号密码(可能用了 Google/Apple 等第三方登录)。请展开下方手动填写。";
-      await api.zwiftLoginCleanup();
-      return;
-    }
-    zwiftBusy.value = true;
-    message.value = "✅ 官方登录成功,正在保存并开启同步…";
-    try {
-      message.value = await api.zwiftSyncSave(u, p, false);
-      await api.zwiftLoginCleanup();
-    } catch (e) {
-      error.value = String(e);
-    } finally {
-      zwiftBusy.value = false;
-      await refresh();
-    }
-  });
-  unfail = await api.onZwiftLoginFailed(() => {
-    error.value = "官方页面提示登录失败(账号或密码有误),请在登录窗口里重试。";
-  });
-});
-onUnmounted(() => {
-  uncred?.();
-  unok?.();
-  unfail?.();
-});
+onMounted(refresh);
 </script>
 
 <template>
@@ -149,40 +100,30 @@ onUnmounted(() => {
         <p style="color: var(--muted); line-height: 1.9">
           开启后,每次骑行结束会自动把活动上传到官方 Zwift 服务器 —— 离线骑的里程也能计入官方账号、涨经验。
         </p>
-        <div class="actions" style="margin-top: 4px">
-          <button class="btn" :disabled="loginWindowBusy || zwiftBusy" @click="openOfficialLogin">
-            {{ loginWindowBusy ? "正在打开…" : "🔑 打开 Zwift 官方登录窗口(推荐)" }}
+        <div class="form-row">
+          <label>账号(邮箱)</label>
+          <input class="path" v-model="zwiftUser" placeholder="你在官方 Zwift 的登录邮箱" />
+        </div>
+        <div class="form-row">
+          <label>密码</label>
+          <input class="path" type="password" v-model="zwiftPass" placeholder="官方 Zwift 密码(只用官方接口验证,保存在本机加密文件里)" />
+        </div>
+        <label style="display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; margin: 6px 0 4px 140px">
+          <input type="checkbox" v-model="zwiftVerify" />
+          保存前先登录官方服务器验证账号(推荐,需要联网)
+        </label>
+        <div class="actions">
+          <button class="btn" :disabled="zwiftBusy" @click="saveZwift">
+            {{ zwiftBusy ? (zwiftVerify ? "正在官方验证并保存…" : "保存中…") : "保存并开启同步" }}
+          </button>
+          <button class="btn ghost" @click="openOfficialLogin">
+            🌐 浏览器打开官方登录页(忘记密码/确认账号用)
           </button>
         </div>
         <p class="note blue" style="margin-top: 10px">
-          弹出的窗口就是 <b>Zwift 官方登录页</b>(secure.zwift.com)。你在官方页面登录,启动器在登录成功后自动记住账号并开启同步,
-          全程不用手动填表单。提示:打开窗口期间会暂时绕开 hosts 劫持,关闭窗口后自动恢复;使用 Google/Apple 第三方登录的账号请用下方手动填写。
+          为什么需要密码:zoffline 引擎每次上传都要用你的账号密码登录官方服务器,所以必须把密码(加密后)存在本机。
+          验证/上传走的都是 Zwift 官方接口;用 Google/Apple 第三方登录的账号请先在官方页面设置邮箱密码。
         </p>
-
-        <details style="margin-top: 12px">
-          <summary style="cursor: pointer; color: var(--muted); font-size: 12.5px; user-select: none">
-            手动填写账号密码(兜底方式,点开)
-          </summary>
-          <div style="margin-top: 10px">
-            <div class="form-row">
-              <label>账号(邮箱)</label>
-              <input class="path" v-model="zwiftUser" placeholder="你在官方 Zwift 的登录邮箱" />
-            </div>
-            <div class="form-row">
-              <label>密码</label>
-              <input class="path" type="password" v-model="zwiftPass" placeholder="官方 Zwift 密码" />
-            </div>
-            <label style="display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; margin: 6px 0 4px 140px">
-              <input type="checkbox" v-model="zwiftVerify" />
-              保存前先登录官方服务器验证账号(推荐,需要联网)
-            </label>
-            <div class="actions">
-              <button class="btn" :disabled="zwiftBusy" @click="saveZwift">
-                {{ zwiftBusy ? (zwiftVerify ? "验证并保存中…" : "保存中…") : "保存并开启同步" }}
-              </button>
-            </div>
-          </div>
-        </details>
 
         <p v-if="!zwift.player_id" class="note red" style="margin-top: 10px">
           还没找到玩家档案(storage 下没有含 profile.bin 的目录):先把服务跑起来、进一次游戏,再回来配置。

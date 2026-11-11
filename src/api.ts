@@ -66,8 +66,6 @@ export const api = {
   zwiftSyncSave: (username: string, password: string, verify: boolean) =>
     invoke<string>("zwift_sync_save", { username, password, verify }),
   zwiftSyncClear: () => invoke<string>("zwift_sync_clear"),
-  zwiftLoginWindow: () => invoke<void>("zwift_login_window"),
-  zwiftLoginCleanup: () => invoke<void>("zwift_login_cleanup"),
   pickDir: () => open({ directory: true, multiple: false }) as Promise<string | null>,
   onServiceLog: (cb: (line: string) => void): Promise<UnlistenFn> =>
     listen<string>("service:log", (e) => cb(e.payload)),
@@ -75,10 +73,4 @@ export const api = {
     listen<string>("service:exited", (e) => cb(e.payload)),
   onConfigProgress: (cb: (r: StepResult) => void): Promise<UnlistenFn> =>
     listen<StepResult>("config:progress", (e) => cb(e.payload)),
-  onZwiftCred: (cb: (c: { u: string; p: string }) => void): Promise<UnlistenFn> =>
-    listen<{ u: string; p: string }>("zwift-cred", (e) => cb(e.payload)),
-  onZwiftLoginSuccess: (cb: (c: { u: string; p: string }) => void): Promise<UnlistenFn> =>
-    listen<{ u: string; p: string }>("zwift-login-success", (e) => cb(e.payload)),
-  onZwiftLoginFailed: (cb: () => void): Promise<UnlistenFn> =>
-    listen("zwift-login-failed", () => cb()),
 };
