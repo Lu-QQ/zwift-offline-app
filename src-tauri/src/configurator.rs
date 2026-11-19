@@ -365,6 +365,94 @@ pub fn restore_run(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Vec<
     results
 }
 
+// ---------- 引擎一键下载 ----------
+
+/// 引擎源码包:fatsbrown fork 是活跃维护版,上游 zoffline 已弃维;最后直连兜底
+const ENGINE_ZIP_MIRRORS: &[&str] = &[
+    "https://ghfast.top/https://github.com/fatsbrown/zwift-offline/archive/refs/heads/master.zip",
+    "https://gh-proxy.com/https://github.com/fatsbrown/zwift-offline/archive/refs/heads/master.zip",
+    "https://github.com/fatsbrown/zwift-offline/archive/refs/heads/master.zip",
+];
+
+fn emit_engine_log(app: &AppHandle, detail: String) {
+    let _ = app.emit("config:progress", StepResult {
+        id: "engine".into(),
+        name: "引擎".into(),
+        status: "log".into(),
+        detail,
+    });
+}
+
+/// 一键下载 zoffline 引擎源码并解压到启动器安装目录旁边(自动识别即可找到)。
+/// AGPL-3.0:原样分发上游源码包,许可与来源见仓库 README。
+#[tauri::command]
+pub fn install_engine(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Result<String, String> {
+    let settings: Settings = s.settings.lock().unwrap().clone();
+    if crate::detector::resolve_engine(&settings).is_some() {
+        return Ok("引擎已存在,无需下载".into());
+    }
+    // 目标:exe 所在目录的同级 zwift-offline(与自动探测逻辑一致)
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_dir = exe.parent().ok_or("无法定位启动器目录")?.to_path_buf();
+    let base = exe_dir.parent().ok_or("无法定位上级目录")?.to_path_buf();
+    let target = base.join("zwift-offline");
+    if target.exists() {
+        return Err(format!("{} 已存在但不像完整引擎(缺 standalone.py),请手动检查或删除后重试", target.display()));
+    }
+
+    let zip_path = std::env::temp_dir().join("zoffline-engine.zip");
+    let mut last_err = String::new();
+    for url in ENGINE_ZIP_MIRRORS {
+        emit_engine_log(&app, format!("正在从镜像下载引擎源码({url})"));
+        match download_with_progress(&app, url, &zip_path) {
+            Ok(_) => {
+                emit_engine_log(&app, "下载完成,正在解压…".into());
+                // 解压到临时目录,再把 zwift-offline-master 移到目标位置
+                let tmp_dir = std::env::temp_dir().join("zoffline-engine-unzip");
+                let _ = std::fs::remove_dir_all(&tmp_dir);
+                let expand = if is_windows() {
+                    run_cmd(std::process::Command::new("powershell")
+                        .args(["-NoProfile", "-Command",
+                            &format!("Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+                                zip_path.display(), tmp_dir.display())]))
+                } else {
+                    run_cmd(std::process::Command::new("unzip")
+                        .arg("-oq").arg(&zip_path).arg("-d").arg(&tmp_dir))
+                };
+                let _ = std::fs::remove_file(&zip_path);
+                if !expand.0 {
+                    last_err = format!("解压失败: {}", expand.1);
+                    emit_engine_log(&app, last_err.clone());
+                    continue;
+                }
+                // zip 内是 zwift-offline-master/ 前缀
+                let inner = tmp_dir.join("zwift-offline-master");
+                if !inner.join("standalone.py").is_file() {
+                    last_err = "下载的压缩包里没有 standalone.py,换源重试".into();
+                    emit_engine_log(&app, last_err.clone());
+                    let _ = std::fs::remove_dir_all(&tmp_dir);
+                    continue;
+                }
+                std::fs::rename(&inner, &target).map_err(|e| format!("移动引擎目录失败: {e}"))?;
+                let _ = std::fs::remove_dir_all(&tmp_dir);
+                emit_engine_log(&app, format!("引擎已就位:{}", target.display()));
+                // 复检:识别成功即返回
+                let mut probe = settings.clone();
+                probe.engine_path = Some(target.to_string_lossy().to_string());
+                return match crate::detector::resolve_engine(&probe) {
+                    Some(_) => Ok(format!("引擎下载完成:{}", target.display())),
+                    None => Err("引擎已下载但识别异常,请在路径设置里手动确认".into()),
+                };
+            }
+            Err(e) => {
+                last_err = format!("{url}: {e}");
+                emit_engine_log(&app, format!("该源失败,换下一个…({last_err})"));
+            }
+        }
+    }
+    Err(format!("所有下载源都失败:{last_err}"))
+}
+
 // ---------- Python 自动安装 ----------
 
 const PYTHON_INSTALLER: &str = "python-3.12.9-amd64.exe";

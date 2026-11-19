@@ -281,10 +281,15 @@ fn home_dir() -> Option<PathBuf> {
     }
 }
 
-/// exe 所在位置向上最多 6 级祖先,每级:自身是否引擎目录 / 子目录里有没有引擎目录
+/// exe 所在位置向上最多 6 级祖先找引擎目录。
+/// 优先级:启动器同级(老用户的引擎带着 storage 骑行数据)> 安装目录内的内置引擎
+/// > 各级祖先的子目录。exe_dir(第 0 级)里通常是安装包自带的全新引擎,
+/// 若同级已存在用户自己的引擎,必须让老数据优先。
 fn engine_around_exe() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let mut ancestor = exe.parent()?.to_path_buf();
+    let exe_dir = exe.parent()?.to_path_buf();
+    // 第一轮:从 exe 的上级开始,逐级找"同级 zwift-offline / 自身就是引擎 / 子目录引擎"
+    let mut ancestor = exe_dir.parent()?.to_path_buf();
     for _ in 0..6 {
         if is_engine_dir(&ancestor) {
             return Some(ancestor);
@@ -293,7 +298,6 @@ fn engine_around_exe() -> Option<PathBuf> {
         if is_engine_dir(&candidate) {
             return Some(candidate);
         }
-        // 扫这一级的所有子目录(只看一层)
         if let Ok(rd) = std::fs::read_dir(&ancestor) {
             for entry in rd.flatten() {
                 let path = entry.path();
@@ -303,6 +307,21 @@ fn engine_around_exe() -> Option<PathBuf> {
             }
         }
         ancestor = ancestor.parent()?.to_path_buf();
+    }
+    // 第二轮:安装目录内部(内置引擎,全新无数据,优先级最低)。
+    // resources 数组打包会保留相对结构,落在 engine/zwift-offline/
+    for bundled in [exe_dir.join("zwift-offline"), exe_dir.join("engine").join("zwift-offline")] {
+        if is_engine_dir(&bundled) {
+            return Some(bundled);
+        }
+    }
+    if let Ok(rd) = std::fs::read_dir(&exe_dir) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if is_engine_dir(&path) {
+                return Some(path);
+            }
+        }
     }
     None
 }

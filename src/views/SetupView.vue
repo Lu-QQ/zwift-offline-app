@@ -104,6 +104,25 @@ const pythonMissing = computed(() =>
   items.value.some((i) => i.id === "python" && i.status === "fail")
 );
 
+const installingEngine = ref(false);
+const engineMissing = computed(() =>
+  items.value.some((i) => i.id === "engine" && i.status === "fail")
+);
+
+async function downloadEngine() {
+  installingEngine.value = true;
+  error.value = "";
+  message.value = "";
+  try {
+    message.value = await api.installEngine();
+    items.value = await api.detect();
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    installingEngine.value = false;
+  }
+}
+
 async function autoInstallPython() {
   installingPython.value = true;
   error.value = "";
@@ -217,6 +236,19 @@ onUnmounted(() => unlisten?.());
       </template>
     </div>
     <p v-else style="color: var(--muted); margin-top: 10px">尚未检测</p>
+
+    <div v-if="engineMissing" class="note red" style="margin-top: 14px">
+      <b>缺 zoffline 引擎</b> —— 两种解决办法:
+      <div class="actions" style="margin-top: 10px">
+        <button class="btn" :disabled="installingEngine" @click="downloadEngine">
+          {{ installingEngine ? "下载中,请耐心等待…" : "⬇ 一键下载引擎(推荐,约 5MB)" }}
+        </button>
+      </div>
+      <p style="margin-top: 8px; color: var(--muted)">
+        从国内镜像下载 zoffline 引擎源码(活跃维护版),自动解压到启动器旁边。
+        也可以在上方「路径设置」里手动指定已有的引擎目录。
+      </p>
+    </div>
 
     <div v-if="pythonMissing" class="note red" style="margin-top: 14px">
       <b>缺 Python 3</b> —— 三种解决办法(任选其一):

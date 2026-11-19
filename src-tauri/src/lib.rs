@@ -76,6 +76,7 @@ pub fn run() {
             configurator::restore_run,
             configurator::install_deps,
             configurator::install_python,
+            configurator::install_engine,
             service::service_start,
             service::service_stop,
             service::service_status,

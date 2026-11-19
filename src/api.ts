@@ -55,6 +55,7 @@ export const api = {
   restoreRun: () => invoke<StepResult[]>("restore_run"),
   installDeps: () => invoke<string>("install_deps"),
   installPython: () => invoke<string>("install_python"),
+  installEngine: () => invoke<string>("install_engine"),
   openUrl: (url: string) => openUrl(url),
   serviceStart: () => invoke<string>("service_start"),
   serviceStop: () => invoke<string>("service_stop"),

@@ -129,9 +129,14 @@ mod tests {
     }
 
     /// 端到端:Rust 按命令同款逻辑写 key + zwift_credentials.bin,
-    /// 再用 zwift_offline.py 的 decrypt_credentials 同款 Python 代码读回验证
+    /// 再用 zwift_offline.py 的 decrypt_credentials 同款 Python 代码读回验证。
+    /// 开发机没装 Python(如演示机)时跳过 —— 算法级一致性由 cfb8_matches_pycryptodome 保证。
     #[test]
     fn credentials_file_roundtrip_with_engine_python() {
+        if std::process::Command::new("py").arg("-3").arg("--version").output().is_err() {
+            println!("skip: 本机无 py -3(跨端文件级测试需要 Python)");
+            return;
+        }
         let dir = std::env::temp_dir().join("zl_cred_roundtrip");
         std::fs::create_dir_all(&dir).unwrap();
         let key_path = dir.join("credentials-key.bin");

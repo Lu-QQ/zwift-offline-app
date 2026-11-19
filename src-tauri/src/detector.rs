@@ -182,7 +182,7 @@ pub fn detect_run(s: tauri::State<'_, crate::AppState>, service: tauri::State<'_
             "engine",
             "zoffline 引擎",
             "未找到 zoffline".into(),
-            "在“设置”里选择 zwift-offline 源码目录(含 standalone.py),或选择 zoffline.exe。源码目录默认与本启动器同级。",
+            "点下方「⬇ 一键下载引擎」自动搞定;或在“路径设置”里选择 zwift-offline 源码目录(含 standalone.py)/ zoffline.exe。",
         )),
     }
 
