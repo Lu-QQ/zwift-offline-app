@@ -56,6 +56,15 @@ async function launch() {
   }
 }
 
+async function killZwift() {
+  error.value = "";
+  try {
+    message.value = await api.killZwiftProcesses();
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
 async function scrollBottom() {
   await nextTick();
   if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight;
@@ -100,6 +109,9 @@ onUnmounted(() => {
           {{ stopping ? "停止中…" : "■ 停止服务" }}
         </button>
         <button class="btn" @click="launch">🚴 启动 Zwift</button>
+        <button class="btn ghost" @click="killZwift" title="配置/还原证书后,Zwift 需要完全重启才会重新加载">
+          ⏻ 强制结束 Zwift 进程
+        </button>
       </div>
     </div>
   </div>

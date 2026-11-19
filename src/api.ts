@@ -62,6 +62,7 @@ export const api = {
   serviceStatus: () => invoke<ServiceStatus>("service_status"),
   serviceLogs: () => invoke<string[]>("service_logs"),
   launchZwift: () => invoke<string>("launch_zwift"),
+  killZwiftProcesses: () => invoke<string>("kill_zwift_processes"),
   stravaStatus: () => invoke<StravaStatus>("strava_status"),
   stravaAuthorize: (clientId: string, clientSecret: string) =>
     invoke<string>("strava_authorize", { clientId, clientSecret }),

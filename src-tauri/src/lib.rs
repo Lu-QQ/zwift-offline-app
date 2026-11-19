@@ -82,6 +82,7 @@ pub fn run() {
             service::service_status,
             service::service_logs,
             service::launch_zwift,
+            service::kill_zwift_processes,
             strava::strava_status,
             strava::strava_authorize,
             zwiftsync::zwift_sync_status,

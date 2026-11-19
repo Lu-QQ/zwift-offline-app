@@ -318,9 +318,18 @@ pub fn config_apply(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Vec
         }
     }
 
-    // 结束时杀掉 Zwift 启动器,让它重新读取 cacert.pem(与 configure_client.bat 一致)
+    // 结束时杀掉 Zwift 全部进程(启动器+游戏本体),让客户端重新加载证书/hosts。
+    // 只杀 Launcher 不够:游戏本体 Zwift.exe 若还在跑,仍然用旧的证书缓存
     if is_windows() {
-        let _ = run_cmd(std::process::Command::new("taskkill").args(["/F", "/IM", "ZwiftLauncher.exe"]));
+        for proc in ["Zwift.exe", "ZwiftLauncher.exe"] {
+            let r = if run_cmd(std::process::Command::new("taskkill").args(["/T", "/F", "/IM"]).arg(proc)).0 {
+                done("killzwift", "结束 Zwift 进程", format!("{proc} 已结束(重启客户端后生效)"))
+            } else {
+                continue;
+            };
+            emit_progress(&app, &r);
+            results.push(r);
+        }
     }
 
     results

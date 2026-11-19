@@ -210,6 +210,27 @@ fn service_stop_impl(app: &AppHandle, service: &tauri::State<'_, ServiceState>) 
     Ok("已发送停止指令".into())
 }
 
+/// 强制结束所有 Zwift 进程(启动器+游戏本体),用于配置/还原后让客户端重新加载证书
+#[tauri::command]
+pub fn kill_zwift_processes() -> String {
+    if !is_windows() {
+        run_cmd(Command::new("pkill").args(["-f", "Zwift"]));
+        return "已发送结束指令(macOS)".into();
+    }
+    let mut killed = Vec::new();
+    for proc in ["Zwift.exe", "ZwiftLauncher.exe"] {
+        let (ok, _) = run_cmd(Command::new("taskkill").args(["/T", "/F", "/IM"]).arg(proc));
+        if ok {
+            killed.push(proc);
+        }
+    }
+    if killed.is_empty() {
+        "没有发现正在运行的 Zwift 进程".into()
+    } else {
+        format!("已结束:{}", killed.join(", "))
+    }
+}
+
 /// 启动 Zwift 客户端
 #[tauri::command]
 pub fn launch_zwift(s: tauri::State<'_, crate::AppState>) -> Result<String, String> {
