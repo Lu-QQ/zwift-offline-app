@@ -1,6 +1,11 @@
 ---
 name: zoffline-setup
 description: 配置、启动、修复或还原 zoffline(Zwift 离线服务器)。当用户提到 Zwift 离线、zoffline、zwift-offline、离线骑 Zwift、把 Zwift 客户端指向本地/离线服务器、Zwift 打不开/连不上离线服、还原官方 Zwift、Zwift 或 Strava 骑行数据自动同步上传时使用。覆盖 Windows 与 macOS:环境检测、引擎/Python 安装、hosts 与证书配置、服务启停、云同步凭据。
+slug: zoffline-setup
+displayName: zoffline 一键配置(Zwift 离线)
+version: 1.0.0
+summary: 让 AI Agent 替你把 Zwift 切到离线服务器:内置引擎离线开箱即用,自动装 Python、配 hosts/证书、启停服务、官方 Zwift 与 Strava 云同步凭据,全程可一键还原。沉淀了全部实战坑位(探活端口、证书指纹、CFB8 加密等)。
+license: AGPL-3.0
 ---
 
 # zoffline 一键配置
