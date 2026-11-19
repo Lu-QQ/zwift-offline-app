@@ -154,7 +154,7 @@ fn handle_request(stream: &mut TcpStream) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub fn strava_authorize(
+pub async fn strava_authorize(
     app: AppHandle,
     s: tauri::State<'_, crate::AppState>,
     client_id: String,
@@ -164,6 +164,18 @@ pub fn strava_authorize(
         return Err("请填写 Strava 应用的 Client ID 和 Client Secret".into());
     }
     let settings: Settings = s.settings.lock().unwrap().clone();
+    // 授权回调最长等 5 分钟,必须放后台线程,否则主线程卡死窗口无响应
+    tauri::async_runtime::spawn_blocking(move || strava_authorize_impl(app, settings, client_id, client_secret))
+        .await
+        .map_err(|e| format!("后台任务失败: {e}"))?
+}
+
+fn strava_authorize_impl(
+    app: AppHandle,
+    settings: Settings,
+    client_id: String,
+    client_secret: String,
+) -> Result<String, String> {
     let port = settings.strava_port_or_default();
     let pdir = player_dir(&settings)
         .ok_or("未找到玩家档案目录(storage 下含 profile.bin 的目录)。请先把服务跑起来、进一次游戏生成档案,再做授权。")?;

@@ -81,8 +81,21 @@ pub fn missing_python_deps(python: &(String, Vec<String>, String)) -> Vec<String
 }
 
 #[tauri::command]
-pub fn detect_run(app: tauri::AppHandle, s: tauri::State<'_, crate::AppState>, service: tauri::State<'_, crate::service::ServiceState>) -> Vec<CheckItem> {
-    let mut settings = s.settings.lock().unwrap().clone();
+pub async fn detect_run(
+    app: tauri::AppHandle,
+    s: tauri::State<'_, crate::AppState>,
+    service: tauri::State<'_, crate::service::ServiceState>,
+) -> Result<Vec<CheckItem>, String> {
+    let settings = s.settings.lock().unwrap().clone();
+    let service_running = service.is_running();
+    // 检测要跑 certutil/netstat 等子进程(秒级),放后台线程避免界面卡顿
+    tauri::async_runtime::spawn_blocking(move || detect_run_impl(app, settings, service_running))
+        .await
+        .map_err(|e| format!("后台任务失败: {e}"))
+}
+
+fn detect_run_impl(app: tauri::AppHandle, settings: Settings, service_running: bool) -> Vec<CheckItem> {
+    let mut settings = settings;
     // 引擎缺失时现场重跑自动寻找(启动时的自动寻找只跑一次;引擎后到位/
     // 手动放入的场景,点「重新检测」就能找到并记住,不用重启应用)
     if resolve_engine(&settings).is_none() {
@@ -100,8 +113,10 @@ pub fn detect_run(app: tauri::AppHandle, s: tauri::State<'_, crate::AppState>, s
             }
         }
         if changed {
+            use tauri::Manager;
             let _ = crate::settings::save(&app, &settings);
-            *s.settings.lock().unwrap() = settings.clone();
+            let st = app.state::<crate::AppState>();
+            *st.settings.lock().unwrap() = settings.clone();
         }
     }
     let settings = settings;
@@ -208,8 +223,7 @@ pub fn detect_run(app: tauri::AppHandle, s: tauri::State<'_, crate::AppState>, s
         )),
     }
 
-    // 4. 端口(服务已在运行时 80/443 被占是正常状态)
-    let service_running = service.is_running();
+    // 4. 端口(服务已在运行时 80/443 被占是正常状态;service_running 由外层传入)
     for (port, proto, label) in [(80u16, "tcp", "80 (CDN)"), (443, "tcp", "443 (主服务)"), (3025, "tcp", "3025 (TCP)"), (3024, "udp", "3024 (UDP)")] {
         let free = if proto == "tcp" { tcp_port_free(port) } else { udp_port_free(port) };
         if free {

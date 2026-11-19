@@ -133,8 +133,15 @@ mod tests {
     /// 开发机没装 Python(如演示机)时跳过 —— 算法级一致性由 cfb8_matches_pycryptodome 保证。
     #[test]
     fn credentials_file_roundtrip_with_engine_python() {
-        if std::process::Command::new("py").arg("-3").arg("--version").output().is_err() {
-            println!("skip: 本机无 py -3(跨端文件级测试需要 Python)");
+        // 需要 py -3 且装了 pycryptodome(引擎依赖);裸 Python 环境跳过,
+        // 算法级一致性由 cfb8_matches_pycryptodome 的固定向量保证
+        let ok = std::process::Command::new("py")
+            .args(["-3", "-c", "import Crypto"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !ok {
+            println!("skip: 本机无 py -3 + pycryptodome(跨端文件级测试需要)");
             return;
         }
         let dir = std::env::temp_dir().join("zl_cred_roundtrip");
@@ -222,7 +229,7 @@ pub fn zwift_sync_status(s: State<'_, crate::AppState>) -> ZwiftSyncStatus {
 }
 
 #[tauri::command]
-pub fn zwift_sync_save(
+pub async fn zwift_sync_save(
     s: State<'_, crate::AppState>,
     username: String,
     password: String,
@@ -232,6 +239,18 @@ pub fn zwift_sync_save(
         return Err("用户名和密码不能为空".into());
     }
     let settings = s.settings.lock().unwrap().clone();
+    // verify 时要连官方服务器(最长 30s+),放后台线程避免卡界面
+    tauri::async_runtime::spawn_blocking(move || zwift_sync_save_impl(settings, username, password, verify))
+        .await
+        .map_err(|e| format!("后台任务失败: {e}"))?
+}
+
+fn zwift_sync_save_impl(
+    settings: Settings,
+    username: String,
+    password: String,
+    verify: bool,
+) -> Result<String, String> {
     let root = engine_root(&settings)
         .ok_or("未配置 zoffline 引擎,请先在环境检测页设置")?;
     let pdir = crate::strava::player_dir(&settings)

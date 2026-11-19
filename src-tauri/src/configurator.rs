@@ -386,8 +386,15 @@ fn emit_engine_log(app: &AppHandle, detail: String) {
 /// 一键下载 zoffline 引擎源码并解压到启动器安装目录旁边(自动识别即可找到)。
 /// AGPL-3.0:原样分发上游源码包,许可与来源见仓库 README。
 #[tauri::command]
-pub fn install_engine(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Result<String, String> {
+pub async fn install_engine(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Result<String, String> {
     let settings: Settings = s.settings.lock().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || install_engine_impl(app, settings))
+        .await
+        .map_err(|e| format!("后台任务失败: {e}"))?
+}
+
+/// 下载解压的阻塞实现,放后台线程跑,避免卡死界面(同步命令默认在主线程执行)
+fn install_engine_impl(app: AppHandle, settings: Settings) -> Result<String, String> {
     if crate::detector::resolve_engine(&settings).is_some() {
         return Ok("引擎已存在,无需下载".into());
     }
@@ -473,7 +480,15 @@ fn emit_log(app: &AppHandle, detail: String) {
 /// 自动安装 Python:国内镜像优先下载 → 静默安装(PrependPath)→ 复检。
 /// 不打包进安装包:体积会从 2MB 涨到 28MB+,且 pip 依赖反正要联网。
 #[tauri::command]
-pub fn install_python(app: AppHandle) -> Result<String, String> {
+pub async fn install_python(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || install_python_impl(app))
+        .await
+        .map_err(|e| format!("后台任务失败: {e}"))?
+}
+
+/// 下载+静默安装的阻塞实现(下载 27MB + 等安装器 1-2 分钟,必须放后台线程,
+/// 否则同步命令卡在主线程,整个窗口"无响应")
+fn install_python_impl(app: AppHandle) -> Result<String, String> {
     if find_python().is_some() {
         return Ok("检测到 Python 已安装,无需重复安装".into());
     }
@@ -551,8 +566,14 @@ fn download_with_progress(app: &AppHandle, url: &str, dest: &Path) -> Result<f64
 
 /// 一键安装 Python 依赖(pip install -r requirements.txt)
 #[tauri::command]
-pub fn install_deps(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Result<String, String> {
+pub async fn install_deps(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Result<String, String> {
     let settings: Settings = s.settings.lock().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || install_deps_impl(app, settings))
+        .await
+        .map_err(|e| format!("后台任务失败: {e}"))?
+}
+
+fn install_deps_impl(app: AppHandle, settings: Settings) -> Result<String, String> {
     let engine = resolve_engine(&settings)
         .and_then(|(src, _)| src)
         .ok_or("源码模式才能安装依赖,请先在设置里选择引擎源码目录")?;

@@ -170,7 +170,21 @@ pub fn service_start(
 }
 
 #[tauri::command]
-pub fn service_stop(service: tauri::State<'_, ServiceState>, app: AppHandle) -> Result<String, String> {
+pub async fn service_stop(service: tauri::State<'_, ServiceState>, app: AppHandle) -> Result<String, String> {
+    if !service.is_running() {
+        return Ok("服务未在运行".into());
+    }
+    // 停止要等 taskkill 生效(最多 3 秒轮询),放后台线程避免卡界面
+    let _ = &service;
+    tauri::async_runtime::spawn_blocking(move || {
+        let service = app.state::<ServiceState>();
+        service_stop_impl(&app, &service)
+    })
+    .await
+    .map_err(|e| format!("后台任务失败: {e}"))?
+}
+
+fn service_stop_impl(app: &AppHandle, service: &tauri::State<'_, ServiceState>) -> Result<String, String> {
     if !service.is_running() {
         return Ok("服务未在运行".into());
     }
