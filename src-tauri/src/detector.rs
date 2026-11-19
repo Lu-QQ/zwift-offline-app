@@ -81,8 +81,30 @@ pub fn missing_python_deps(python: &(String, Vec<String>, String)) -> Vec<String
 }
 
 #[tauri::command]
-pub fn detect_run(s: tauri::State<'_, crate::AppState>, service: tauri::State<'_, crate::service::ServiceState>) -> Vec<CheckItem> {
-    let settings = s.settings.lock().unwrap().clone();
+pub fn detect_run(app: tauri::AppHandle, s: tauri::State<'_, crate::AppState>, service: tauri::State<'_, crate::service::ServiceState>) -> Vec<CheckItem> {
+    let mut settings = s.settings.lock().unwrap().clone();
+    // 引擎缺失时现场重跑自动寻找(启动时的自动寻找只跑一次;引擎后到位/
+    // 手动放入的场景,点「重新检测」就能找到并记住,不用重启应用)
+    if resolve_engine(&settings).is_none() {
+        let mut changed = false;
+        if settings.engine_path.is_none() {
+            if let Some(p) = crate::util::find_engine_source() {
+                settings.engine_path = Some(p.to_string_lossy().to_string());
+                changed = true;
+            }
+        }
+        if settings.engine_path.is_none() && settings.engine_exe.is_none() {
+            if let Some(p) = crate::util::find_engine_exe() {
+                settings.engine_exe = Some(p.to_string_lossy().to_string());
+                changed = true;
+            }
+        }
+        if changed {
+            let _ = crate::settings::save(&app, &settings);
+            *s.settings.lock().unwrap() = settings.clone();
+        }
+    }
+    let settings = settings;
     let mut items = Vec::new();
 
     // 1. 管理员权限
