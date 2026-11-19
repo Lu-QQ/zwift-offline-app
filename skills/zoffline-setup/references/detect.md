@@ -10,6 +10,10 @@
 - Windows: `C:\Program Files (x86)\Zwift\` 存在(或注册表 `HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Zwift` 的 InstallLocation)
 - macOS: `/Applications/Zwift.app`
 - cacert 路径:Win=`<Zwift目录>\data\cacert.pem`;mac=`~/Library/Application Support/Zwift/data/cacert.pem`
+- **未安装时(明确告知用户,不自动装)**:
+  1. 告诉用户:"Zwift 游戏本体还没装,这一步没法替你装 —— 请到 https://www.zwift.com/download 下载安装(需要注册 Zwift 账号),装好后叫我继续"
+  2. 引擎放置、Python、依赖安装**可以先做**;hosts/证书里的 cacert 追加这两步依赖 Zwift 目录,**等装好再做**
+  3. 非标准安装位置时,请用户告知目录,后续 cacert 步骤用该目录
 
 ## 3. Python
 - Windows 用 `py -3 --version`(**不要用 `python`**,那是商店占位符);macOS 用 `python3 --version`
