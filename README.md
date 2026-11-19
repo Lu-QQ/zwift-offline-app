@@ -2,7 +2,9 @@
 
 给 [zoffline](https://github.com/zoffline/zwift-offline)(Zwift 离线服务器)做的中文小白向导桌面应用,基于 **Tauri 2 + Rust + Vue 3**。
 
-> **下载**:到 [Releases](../../releases) 页拿最新的 `zoffline-launcher_x64-setup.exe`(约 2MB),右键"以管理员身份运行"安装。
+> **下载**:到 [Releases](../../releases) 页拿最新的 `zoffline-launcher_x64-setup.exe`(约 3MB,内置引擎装完即用),右键"以管理员身份运行"安装。
+>
+> **有 AI 编程助手的用户**:可用 [skills/zoffline-setup](skills/zoffline-setup/) 技能,一句话让 agent 替你完成全部配置(内置引擎离线可用,不依赖 GitHub)。把 `skills/zoffline-setup/` 复制到 `~/.agents/skills/` 即装。
 >
 > **授权**:本项目继承上游 zoffline 的 **AGPL-3.0**(不限制商用/非商用,要求衍生作品同样开源);Zwift、Strava、zoffline 的商标与代码归各自所有,本项目仅供个人学习研究。
 
