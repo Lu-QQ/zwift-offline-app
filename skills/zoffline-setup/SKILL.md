@@ -12,6 +12,12 @@ license: AGPL-3.0
 
 zoffline 让 Zwift 客户端连本地服务器离线骑行。本技能引导你(agent)替用户完成全部配置。**所有步骤都已踩过坑,按 references 执行,不要自创命令。**
 
+## 随包资源路径
+
+- 以宿主实际加载的 `SKILL.md` 所在目录为 **Skill 目录**。本技能及其参考文档里的 `references/`、`assets/` 和 `scripts/` 路径都相对于这个目录。
+- 读文件、复制或执行命令前，将相对路径拼接为实际的绝对路径。命令参数中的路径加引号，避免目录名含空格时被拆开。
+- 如果宿主没有提供 `SKILL.md` 的文件位置，请用户指定导入的 Skill 目录。若所需资源缺失，请用户重新导入完整技能包。
+
 ## 引擎来源(离线优先,不依赖 GitHub)
 
 - **默认**:`assets/zwift-offline/`(本 skill 自带的源码快照,开箱即用,用户无需联网下载)
@@ -33,7 +39,7 @@ zoffline 让 Zwift 客户端连本地服务器离线骑行。本技能引导你(
 
 | 坑 | 正确做法 |
 |---|---|
-| Windows `python` 是商店占位符 | 一律 `py -3`;没有就先装(见 configure.md) |
+| Windows `python` 是商店占位符 | 一律 `py -3`;没有就先装(见 `references/configure.md`) |
 | 健康探活裸连 443 | **探 80 端口**(纯 HTTP);443 裸连会让 gevent 抛 SSLEOFError 刷屏吓用户 |
 | 验证官方账号/打开官方页 | 先临时注释 hosts 里的 zwift 行(加 `# zl-suspended ` 前缀),完事去掉;否则连到本地假服务器,假验证通过 |
 | Zwift 官方网页登录入口 | `https://www.zwift.com/sign-in`;`/login` 会按 IP 地域跳转后 404 |

@@ -21,7 +21,7 @@
 
 ## 4. 引擎(zwift-offline)
 - 有效 = 目录里同时有 `standalone.py` 和 `zwift_offline.py`
-- 候选:用户指定目录 > `~/.agents/skills/zoffline-setup/assets/zwift-offline`(本 skill 内置,默认就用它)> 常见位置(`~/zwift-offline`、`~/Documents/zwift-offline`、启动器安装目录旁)
+- 候选:用户指定目录 > Skill 目录下的 `assets/zwift-offline/`(内置引擎复制源)> 常见位置(`~/zwift-offline`、`~/Documents/zwift-offline`、启动器安装目录旁)
 
 ## 5. 端口
 - 80 / 443 / 3025(TCP)、3024(UDP)应空闲;被占时 `netstat -ano`+`tasklist` 查占用者告知用户

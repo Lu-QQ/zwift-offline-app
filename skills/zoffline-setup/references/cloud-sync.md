@@ -5,16 +5,16 @@
 ## 前提
 
 - 玩家档案已存在:引擎 `storage/` 下有含 `profile.bin` 的数字目录(先进一次游戏生成)
-- 访问官方必须联网,且**先临时注释 hosts 里的 zwift 行**(见 service.md),否则连的是本地假服务器
+- 访问官方必须联网,且**先临时注释 hosts 里的 zwift 行**(见 `references/service.md`),否则连的是本地假服务器
 
 ## 同步官方 Zwift(zwift_credentials.bin)
 
 - 格式:AES-256-**CFB8** 密文(= pycryptodome `AES.new(key, AES.MODE_CFB, iv)` 默认参数),
   文件 = IV(16字节) + 密文,明文 = `用户名\n密码`(UTF-8)
 - key = 引擎 `storage/credentials-key.bin`(32 字节;不存在就生成随机 32 字节写入,引擎会直接复用)
-- **用现成脚本,别手写加密**:
+- **用现成脚本,别手写加密**。将 Skill 目录下的 `scripts/set_zwift_credentials.py` 解析为绝对路径，填入命令中的脚本路径。引擎目录仍填写实际运行目录。
   ```
-  py -3 ~/.agents/skills/zoffline-setup/scripts/set_zwift_credentials.py --engine <引擎目录> --username <邮箱> --password <密码> [--verify]
+  py -3 "<脚本绝对路径>" --engine "<引擎运行目录>" --username <邮箱> --password <密码> [--verify]
   ```
   `--verify` 会临时挂起 hosts 后调官方接口真实验证(端点:
   `https://secure.zwift.com/auth/realms/zwift/tokens/access/codes`,

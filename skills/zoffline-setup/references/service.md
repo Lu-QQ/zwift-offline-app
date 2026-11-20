@@ -22,7 +22,7 @@
 
 | 现象 | 原因/处理 |
 |---|---|
-| 端口 bind 失败 | 80/443 被 IIS/其他 Web 服务占用(detect.md 查占用者) |
-| Zwift 连不上离线服 | hosts 未生效/证书三件套不全 → 复跑 configure.md 检查 |
+| 端口 bind 失败 | 80/443 被 IIS/其他 Web 服务占用(按 `references/detect.md` 查占用者) |
+| Zwift 连不上离线服 | hosts 未生效/证书三件套不全 → 按 `references/configure.md` 检查 |
 | 日志刷 SSLEOFError | 是健康探针连了 443 就断造成的,改探 80 即消;服务本身没事 |
 | 要访问官方(验证账号/登录页) | 先临时注释 hosts 里 zwift 行(前缀 `# zl-suspended `),完事去掉,否则连到本地假服务器 |
