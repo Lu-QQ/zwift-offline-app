@@ -17,7 +17,7 @@ async function restore() {
     const results = await api.restoreRun();
     steps.value = results;
     if (results.some((r) => r.status === "error")) {
-      error.value = "有步骤失败:常见原因是没用管理员身份运行启动器。";
+      error.value = "有步骤失败，请查看下方的执行结果。";
     } else {
       message.value = "已还原到 Zwift 官方服务器。现在打开 Zwift 连的就是官方了。";
     }

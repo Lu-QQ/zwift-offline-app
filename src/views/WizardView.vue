@@ -185,7 +185,7 @@ onUnmounted(() => {
           </div>
         </div>
         <p v-if="configHasError" class="note red" style="margin-top: 10px">
-          有步骤失败:最常见原因是没用管理员身份运行本程序。请右键启动器 → 以管理员身份运行,再试一次。
+          有步骤失败，请查看上方的执行结果。
         </p>
       </div>
 

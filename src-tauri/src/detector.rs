@@ -2,6 +2,7 @@ use crate::settings::Settings;
 use crate::util::*;
 use serde::Serialize;
 use std::path::PathBuf;
+use tauri::Manager;
 
 #[derive(Serialize, Clone)]
 pub struct CheckItem {
@@ -40,6 +41,34 @@ pub fn resolve_engine(s: &Settings) -> Option<(Option<PathBuf>, Option<PathBuf>)
     None
 }
 
+/// 已配置的有效路径优先，其次查找已有源码引擎，最后准备随包引擎。
+pub fn discover_engine(app: &tauri::AppHandle, settings: &mut Settings) -> Result<bool, String> {
+    if resolve_engine(settings).is_some() {
+        return Ok(false);
+    }
+    if let Some(path) = find_engine_source() {
+        settings.engine_path = Some(path.to_string_lossy().into_owned());
+        return Ok(true);
+    }
+
+    #[cfg(target_os = "macos")]
+    if let Some(path) = crate::mac_engine::prepare(app)? {
+        settings.engine_path = Some(path.to_string_lossy().into_owned());
+        return Ok(true);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        if let Some(path) = find_engine_exe() {
+            settings.engine_exe = Some(path.to_string_lossy().into_owned());
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
 /// 引擎根目录(源码目录,或 exe 所在目录),ssl/ 挂在这里
 pub fn engine_ssl_root(engine: &(Option<PathBuf>, Option<PathBuf>)) -> PathBuf {
     match (&engine.0, &engine.1) {
@@ -61,69 +90,62 @@ pub fn resolve_zwift_dir(s: &Settings) -> Option<PathBuf> {
 }
 
 /// 检测 Python 依赖是否齐全,返回缺失模块列表
-pub fn missing_python_deps(python: &(String, Vec<String>, String)) -> Vec<String> {
+pub fn missing_python_deps(python: &Python) -> Result<Vec<String>, String> {
     let mut cmd = std::process::Command::new(&python.0);
-    cmd.args(&python.1).arg("-c").arg(
-        "import importlib.util as u; \
-         mods=['flask','flask_login','flask_sqlalchemy','gevent','google.protobuf',\
-         'Crypto','jwt','dns.resolver','fitdecode','stravalib']; \
-         print('\\n'.join(m for m in mods if u.find_spec(m) is None))",
-    );
-    let out = cmd.output();
-    match out {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect(),
-        _ => vec!["无法执行 Python".into()],
+    let out = cmd.args(&python.1).arg("-c").arg(r#"
+import importlib
+import json
+failed = []
+for name in ('flask', 'flask_login', 'flask_sqlalchemy', 'gevent', 'google.protobuf',
+             'Crypto', 'jwt', 'dns.resolver', 'fitdecode', 'stravalib'):
+    try:
+        importlib.import_module(name)
+    except Exception:
+        failed.append(name)
+print(json.dumps(failed))
+"#).output().map_err(|error| format!("无法运行 {}：{error}", python.0))?;
+    if !out.status.success() {
+        return Err(format!("{} 退出码异常：{}", python.0, out.status));
     }
+    let output = String::from_utf8_lossy(&out.stdout);
+    serde_json::from_str(output.lines().last().unwrap_or_default())
+        .map_err(|error| format!("无法读取 Python 检测结果：{error}"))
 }
 
 #[tauri::command]
 pub async fn detect_run(
     app: tauri::AppHandle,
-    s: tauri::State<'_, crate::AppState>,
     service: tauri::State<'_, crate::service::ServiceState>,
 ) -> Result<Vec<CheckItem>, String> {
-    let settings = s.settings.lock().unwrap().clone();
     let service_running = service.is_running();
     // 检测要跑 certutil/netstat 等子进程(秒级),放后台线程避免界面卡顿
-    tauri::async_runtime::spawn_blocking(move || detect_run_impl(app, settings, service_running))
+    tauri::async_runtime::spawn_blocking(move || detect_run_impl(app, service_running))
         .await
         .map_err(|e| format!("后台任务失败: {e}"))
 }
 
-fn detect_run_impl(app: tauri::AppHandle, settings: Settings, service_running: bool) -> Vec<CheckItem> {
-    let mut settings = settings;
+fn detect_run_impl(app: tauri::AppHandle, service_running: bool) -> Vec<CheckItem> {
     // 引擎缺失时现场重跑自动寻找(启动时的自动寻找只跑一次;引擎后到位/
     // 手动放入的场景,点「重新检测」就能找到并记住,不用重启应用)
-    if resolve_engine(&settings).is_none() {
-        let mut changed = false;
-        if settings.engine_path.is_none() {
-            if let Some(p) = crate::util::find_engine_source() {
-                settings.engine_path = Some(p.to_string_lossy().to_string());
-                changed = true;
+    let (settings, engine_error) = {
+        let state = app.state::<crate::AppState>();
+        let mut settings = state.settings.lock().unwrap();
+        let error = match discover_engine(&app, &mut settings) {
+            Ok(true) => {
+                let _ = crate::settings::save(&app, &settings);
+                None
             }
-        }
-        if settings.engine_path.is_none() && settings.engine_exe.is_none() {
-            if let Some(p) = crate::util::find_engine_exe() {
-                settings.engine_exe = Some(p.to_string_lossy().to_string());
-                changed = true;
-            }
-        }
-        if changed {
-            use tauri::Manager;
-            let _ = crate::settings::save(&app, &settings);
-            let st = app.state::<crate::AppState>();
-            *st.settings.lock().unwrap() = settings.clone();
-        }
-    }
-    let settings = settings;
+            Ok(false) => None,
+            Err(error) => Some(error),
+        };
+        (settings.clone(), error)
+    };
     let mut items = Vec::new();
 
     // 1. 管理员权限
-    if is_elevated() {
+    if cfg!(target_os = "macos") {
+        items.push(ok("admin", "管理员权限", "配置或还原系统设置时，macOS 会请求授权".into()));
+    } else if is_elevated() {
         items.push(ok("admin", "管理员权限", "当前以管理员身份运行".into()));
     } else {
         items.push(warn(
@@ -179,7 +201,6 @@ fn detect_run_impl(app: tauri::AppHandle, settings: Settings, service_running: b
 
     // 3. 引擎(exe 优先,其次源码)
     let engine = resolve_engine(&settings);
-    let python = find_python();
     match &engine {
         Some((Some(src), None)) => {
             let ssl_ok = src.join("ssl/cert-zwift-com.p12").is_file() && src.join("ssl/cert-zwift-com.pem").is_file();
@@ -189,26 +210,29 @@ fn detect_run_impl(app: tauri::AppHandle, settings: Settings, service_running: b
             }
             items.push(ok("engine", "zoffline 引擎", detail));
             // 3a. Python(源码模式需要)
-            match &python {
+            match find_engine_python(src).as_ref() {
                 Some(p) => {
-                    items.push(ok("python", "Python", p.2.clone()));
-                    let missing = missing_python_deps(p);
-                    if missing.is_empty() {
-                        items.push(ok("deps", "Python 依赖", "依赖完整,可以直接启动".into()));
-                    } else {
-                        items.push(warn(
+                    items.push(ok("python", "Python", format!("{} · {}", p.2, p.0)));
+                    items.push(match missing_python_deps(p) {
+                        Ok(missing) if missing.is_empty() => ok("deps", "Python 依赖", "依赖完整,可以直接启动".into()),
+                        Ok(missing) => warn(
                             "deps",
                             "Python 依赖",
-                            format!("缺少模块:{}", missing.join(", ")),
-                            "点击“一键安装依赖”(执行 pip install -r requirements.txt)。",
-                        ));
-                    }
+                            format!("无法导入模块：{}", missing.join(", ")),
+                            "点击「一键安装 Python 依赖」，安装到引擎使用的环境。",
+                        ),
+                        Err(error) => warn("deps", "Python 依赖", error, "请重新检测，确认上面显示的解释器可运行。"),
+                    });
                 }
                 None => items.push(fail(
                     "python",
                     "Python",
-                    "未检测到 Python 3".into(),
-                    "点下方「⬇ 自动安装 Python(推荐)」一键搞定;或手动到 python.org 下载安装(勾选 Add python.exe to PATH);或改用 zoffline.exe 模式(不需要 Python)。",
+                    if cfg!(target_os = "macos") { "未检测到 Python 3.11 或更新版本".into() } else { "未检测到 Python 3".into() },
+                    if cfg!(target_os = "macos") {
+                        "从 Python 官网安装 macOS 版，完成后点「重新检测」。"
+                    } else {
+                        "点下方「自动安装 Python」，或改用 zoffline.exe 模式。"
+                    },
                 )),
             }
         }
@@ -218,27 +242,25 @@ fn detect_run_impl(app: tauri::AppHandle, settings: Settings, service_running: b
         _ => items.push(fail(
             "engine",
             "zoffline 引擎",
-            "未找到 zoffline".into(),
+            engine_error.unwrap_or_else(|| "未找到 zoffline".into()),
             "点下方「⬇ 一键下载引擎」自动搞定;或在“路径设置”里选择 zwift-offline 源码目录(含 standalone.py)/ zoffline.exe。",
         )),
     }
 
     // 4. 端口(服务已在运行时 80/443 被占是正常状态;service_running 由外层传入)
     for (port, proto, label) in [(80u16, "tcp", "80 (CDN)"), (443, "tcp", "443 (主服务)"), (3025, "tcp", "3025 (TCP)"), (3024, "udp", "3024 (UDP)")] {
-        let free = if proto == "tcp" { tcp_port_free(port) } else { udp_port_free(port) };
-        if free {
-            items.push(ok("port", &format!("端口 {label}"), "空闲".into()));
-        } else if service_running && (port == 80 || port == 443 || port == 3024 || port == 3025) {
-            items.push(ok("port", &format!("端口 {label}"), "zoffline 服务占用中(正常运行)".into()));
-        } else {
-            let owner = port_owner(port, if proto == "tcp" { "tcp" } else { "udp" }).unwrap_or_else(|| "未知".into());
-            items.push(warn(
-                "port",
-                &format!("端口 {label}"),
-                format!("被占用:{owner}"),
-                "请关闭占用该端口的程序(常见:IIS/其他 Web 服务),否则 zoffline 无法启动。",
-            ));
-        }
+        let name = format!("端口 {label}");
+        items.push(match probe_port(port, proto) {
+            Ok(()) => ok("port", &name, "空闲".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse && service_running => {
+                ok("port", &name, "zoffline 服务占用中(正常运行)".into())
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                let owner = port_owner(port, proto).unwrap_or_else(|| "未识别到进程".into());
+                warn("port", &name, format!("本地端口被占用：{owner}"), "请确认占用端口的服务，再重试启动 zoffline。")
+            }
+            Err(error) => warn("port", &name, format!("无法绑定端口：{error}"), "请检查系统权限或网络限制。"),
+        });
     }
 
     // 5. 证书与 hosts

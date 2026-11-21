@@ -50,6 +50,27 @@ fn backup_path_of(path: &Path) -> PathBuf {
 
 // ---------- hosts ----------
 
+#[cfg(target_os = "macos")]
+fn write_hosts_with_authorization(previous: &str, content: &str, backup: bool) -> Result<(), String> {
+    // 路径固定。通过 argv 传内容，由 AppleScript 进行 shell 引用。
+    const SCRIPT: &str = r#"on run argv
+        set cmd to "/usr/bin/printf %s " & quoted form of (item 1 of argv) & " | /usr/bin/cmp -s - /private/etc/hosts || { echo 'hosts changed; retry' >&2; exit 1; }; set -e; "
+        if item 3 of argv is "backup" then
+            set cmd to cmd & "/bin/cp -np /private/etc/hosts /private/etc/hosts..zoffline-launcher.bak; "
+        end if
+        set cmd to cmd & "tmp=$(/usr/bin/mktemp /private/etc/.zoffline-hosts.XXXXXXXX); trap '/bin/rm -f \"$tmp\"' EXIT; "
+        set cmd to cmd & "/bin/cp -p /private/etc/hosts \"$tmp\"; /usr/bin/printf %s " & quoted form of (item 2 of argv) & " > \"$tmp\"; /bin/mv -f \"$tmp\" /private/etc/hosts"
+        do shell script cmd with administrator privileges
+    end run"#;
+    let (ok, output) = run_cmd(std::process::Command::new("/usr/bin/osascript")
+        .args(["-e", SCRIPT, "--", previous, content, if backup { "backup" } else { "restore" }]));
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("macOS 未能写入 hosts：{output}"))
+    }
+}
+
 fn hosts_configure() -> StepResult {
     let id = "hosts";
     let name = "hosts 重定向";
@@ -62,6 +83,7 @@ fn hosts_configure() -> StepResult {
         Ok(c) => c,
         Err(e) => return errored(id, name, e),
     };
+    #[cfg(not(target_os = "macos"))]
     if let Err(e) = backup_file(&hosts) {
         return errored(id, name, e);
     }
@@ -79,9 +101,13 @@ fn hosts_configure() -> StepResult {
     new_content.push_str("\n\n# zoffline-launcher 开始(还原官方服务器时可自动移除)\n");
     new_content.push_str(&format!("127.0.0.1 {ZOFFLINE_DOMAINS}\n"));
     new_content.push_str("# zoffline-launcher 结束\n");
-    match std::fs::write(&hosts, new_content) {
+    #[cfg(target_os = "macos")]
+    let result = write_hosts_with_authorization(&content, &new_content, true);
+    #[cfg(not(target_os = "macos"))]
+    let result = std::fs::write(&hosts, new_content).map_err(|error| format!("写入 hosts 失败: {error}(需要管理员权限)"));
+    match result {
         Ok(_) => done(id, name, format!("已写入 hosts(备份于 {})", backup_path_of(&hosts).display())),
-        Err(e) => errored(id, name, format!("写入 hosts 失败: {e}(需要管理员权限)")),
+        Err(error) => errored(id, name, error),
     }
 }
 
@@ -117,10 +143,13 @@ fn hosts_restore() -> StepResult {
         }
         filtered.push_str(chunk);
     }
-    let new_content = filtered;
-    match std::fs::write(&hosts, new_content) {
+    #[cfg(target_os = "macos")]
+    let result = write_hosts_with_authorization(&content, &filtered, false);
+    #[cfg(not(target_os = "macos"))]
+    let result = std::fs::write(&hosts, filtered).map_err(|error| format!("写入 hosts 失败: {error}(需要管理员权限)"));
+    match result {
         Ok(_) => done(id, name, "已从 hosts 移除 zoffline 重定向".into()),
-        Err(e) => errored(id, name, format!("写入 hosts 失败: {e}(需要管理员权限)")),
+        Err(error) => errored(id, name, error),
     }
 }
 
@@ -282,8 +311,14 @@ fn engine_ssl_root(engine: &(Option<PathBuf>, Option<PathBuf>)) -> PathBuf {
 }
 
 #[tauri::command]
-pub fn config_apply(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Vec<StepResult> {
+pub async fn config_apply(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Result<Vec<StepResult>, String> {
     let settings: Settings = s.settings.lock().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || config_apply_impl(app, settings))
+        .await
+        .map_err(|error| format!("配置任务失败：{error}"))
+}
+
+fn config_apply_impl(app: AppHandle, settings: Settings) -> Vec<StepResult> {
     let mut results = Vec::new();
 
     let engine = resolve_engine(&settings);
@@ -336,8 +371,14 @@ pub fn config_apply(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Vec
 }
 
 #[tauri::command]
-pub fn restore_run(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Vec<StepResult> {
+pub async fn restore_run(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Result<Vec<StepResult>, String> {
     let settings: Settings = s.settings.lock().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || restore_run_impl(app, settings))
+        .await
+        .map_err(|error| format!("还原任务失败：{error}"))
+}
+
+fn restore_run_impl(app: AppHandle, settings: Settings) -> Vec<StepResult> {
     let mut results = Vec::new();
     let engine = resolve_engine(&settings);
 
@@ -501,6 +542,9 @@ fn install_python_impl(app: AppHandle) -> Result<String, String> {
     if find_python().is_some() {
         return Ok("检测到 Python 已安装,无需重复安装".into());
     }
+    if !is_windows() {
+        return Err("请从 Python 官网安装适用于 macOS 的 Python，再重新检测。".into());
+    }
 
     let tmp = std::env::temp_dir().join(PYTHON_INSTALLER);
     let mut last_err = String::new();
@@ -590,7 +634,22 @@ fn install_deps_impl(app: AppHandle, settings: Settings) -> Result<String, Strin
     if !req.is_file() {
         return Err(format!("找不到 {}", req.display()));
     }
-    let python = find_python().ok_or("未检测到 Python 3")?;
+    #[cfg(target_os = "macos")]
+    let python = {
+        let venv = engine.join(ENGINE_VENV);
+        if engine_venv_python(&engine).is_none() {
+            let python = find_python().ok_or("未检测到引擎可用的 Python")?;
+            let mut cmd = std::process::Command::new(&python.0);
+            cmd.args(&python.1).args(["-m", "venv"]).arg(&venv);
+            let (ok, output) = run_cmd_output(cmd, &app);
+            if !ok {
+                return Err(format!("创建引擎的 Python 环境失败：\n{output}"));
+            }
+        }
+        engine_venv_python(&engine).ok_or("无法运行引擎的 Python 环境")?
+    };
+    #[cfg(not(target_os = "macos"))]
+    let python = find_engine_python(&engine).ok_or("未检测到 Python 3")?;
     let mut cmd = std::process::Command::new(&python.0);
     cmd.args(&python.1)
         .args(["-m", "pip", "install", "-r"])

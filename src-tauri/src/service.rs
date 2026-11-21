@@ -93,7 +93,7 @@ pub fn service_start(
 
     let mut cmd = match (&engine.0, &engine.1) {
         (Some(src), _) => {
-            let python = find_python().ok_or("源码模式需要 Python 3,请先安装或改用 exe 模式")?;
+            let python = find_engine_python(src).ok_or("未找到引擎可用的 Python，请到「环境检测」页确认")?;
             let mut c = Command::new(&python.0);
             c.args(&python.1).arg("standalone.py").current_dir(src);
             c

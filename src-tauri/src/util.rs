@@ -99,35 +99,91 @@ pub fn zwift_cacert(zwift_dir: &std::path::Path) -> PathBuf {
     }
 }
 
-/// 检测 Python:Windows 依次试 py -3 / python,macOS 试 python3。
-/// 返回 Some((启动器程序, 参数, 版本号))
-pub fn find_python() -> Option<(String, Vec<String>, String)> {
-    let try_pair = |program: &str, args: &[&str]| -> Option<(String, Vec<String>, String)> {
-        let mut cmd = Command::new(program);
-        cmd.args(args).arg("--version");
-        let out = cmd.output().ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        let text = String::from_utf8_lossy(&out.stdout).to_string()
-            + &String::from_utf8_lossy(&out.stderr);
-        let version = text
-            .lines()
-            .find(|l| l.contains("Python"))
-            .map(|l| l.trim().to_string())
-            .unwrap_or(text.trim().to_string());
-        if !version.contains('3') {
-            return None;
-        }
-        Some((program.to_string(), args.iter().map(|s| s.to_string()).collect(), version))
-    };
-    if is_windows() {
-        try_pair("py", &["-3"])
-            .or_else(|| try_pair("python", &[]))
-            .or_else(|| try_pair("python3", &[]))
-    } else {
-        try_pair("python3", &[]).or_else(|| try_pair("python", &[]))
+pub type Python = (String, Vec<String>, String);
+
+#[cfg(target_os = "macos")]
+const MIN_ENGINE_PYTHON_MINOR: u32 = 11;
+#[cfg(target_os = "macos")]
+const ENGINE_PYTHON_VERSIONS: &[&str] = &["3.12", "3.11", "3.13", "3.14"];
+
+fn probe_python(program: &str, args: &[&str], min_minor: u32) -> Option<Python> {
+    let out = Command::new(program).args(args).arg("--version").output().ok()?;
+    if !out.status.success() {
+        return None;
     }
+    let text = String::from_utf8_lossy(&out.stdout).to_string()
+        + &String::from_utf8_lossy(&out.stderr);
+    let version = text.lines().find_map(|line| line.trim().strip_prefix("Python 3."))?;
+    let minor: u32 = version.split('.').next()?.parse().ok()?;
+    if minor < min_minor {
+        return None;
+    }
+    Some((program.to_string(), args.iter().map(|arg| arg.to_string()).collect(), format!("Python 3.{version}")))
+}
+
+/// Finder 启动应用时的 PATH 通常不含 Homebrew 或 uv 安装目录。
+pub fn find_python() -> Option<Python> {
+    if is_windows() {
+        return probe_python("py", &["-3"], 0)
+            .or_else(|| probe_python("python", &[], 0))
+            .or_else(|| probe_python("python3", &[], 0));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(python) = probe_python("python3", &[], MIN_ENGINE_PYTHON_MINOR) {
+            return Some(python);
+        }
+        for version in ENGINE_PYTHON_VERSIONS {
+            for path in [
+                format!("/Library/Frameworks/Python.framework/Versions/{version}/bin/python{version}"),
+                format!("/opt/homebrew/bin/python{version}"),
+                format!("/usr/local/bin/python{version}"),
+            ] {
+                if let Some(python) = probe_python(&path, &[], MIN_ENGINE_PYTHON_MINOR) {
+                    return Some(python);
+                }
+            }
+        }
+        let user_uv = home_dir().map(|home| home.join(".local/bin/uv"));
+        for uv in [PathBuf::from("/opt/homebrew/bin/uv"), PathBuf::from("/usr/local/bin/uv")]
+            .into_iter()
+            .chain(user_uv)
+        {
+            for &version in ENGINE_PYTHON_VERSIONS {
+                let Ok(result) = Command::new(&uv)
+                    .args(["--no-python-downloads", "python", "find", "--no-project", "--system", version])
+                    .output()
+                else { break };
+                if result.status.success() {
+                    if let Some(python) = probe_python(String::from_utf8_lossy(&result.stdout).trim(), &[], MIN_ENGINE_PYTHON_MINOR) {
+                        return Some(python);
+                    }
+                }
+            }
+        }
+        None
+    }
+    #[cfg(not(target_os = "macos"))]
+    probe_python("python3", &[], 0).or_else(|| probe_python("python", &[], 0))
+}
+
+#[cfg(target_os = "macos")]
+pub const ENGINE_VENV: &str = ".zoffline-launcher-venv";
+
+#[cfg(target_os = "macos")]
+pub fn engine_venv_python(engine: &std::path::Path) -> Option<Python> {
+    probe_python(&engine.join(ENGINE_VENV).join("bin/python").to_string_lossy(), &[], MIN_ENGINE_PYTHON_MINOR)
+}
+
+pub fn find_engine_python(engine: &std::path::Path) -> Option<Python> {
+    #[cfg(target_os = "macos")]
+    if let Some(python) = engine_venv_python(engine) {
+        return Some(python);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = engine;
+    find_python()
 }
 
 /// 当前进程是否有管理员/root 权限
@@ -263,13 +319,19 @@ pub fn cert_in_store(engine: &std::path::Path) -> bool {
 }
 
 /// 端口能否绑定(能绑 = 没被占用)
-pub fn tcp_port_free(port: u16) -> bool {
-    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+pub fn probe_port(port: u16, proto: &str) -> std::io::Result<()> {
+    // macOS 对指定 IP 的低端口有权限限制。引擎默认监听通配地址。
+    let host = if cfg!(target_os = "macos") { "0.0.0.0" } else { "127.0.0.1" };
+    if proto == "tcp" {
+        std::net::TcpListener::bind((host, port)).map(drop)
+    } else {
+        std::net::UdpSocket::bind((host, port)).map(drop)
+    }
 }
 
 // ---------- 引擎自动寻找 ----------
 
-fn is_engine_dir(p: &std::path::Path) -> bool {
+pub(crate) fn is_engine_dir(p: &std::path::Path) -> bool {
     p.is_dir() && p.join("standalone.py").is_file() && p.join("zwift_offline.py").is_file()
 }
 
@@ -354,6 +416,7 @@ pub fn find_engine_source() -> Option<PathBuf> {
 }
 
 /// 自动寻找 zoffline.exe
+#[cfg(not(target_os = "macos"))]
 pub fn find_engine_exe() -> Option<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         let mut ancestor = exe.parent()?.to_path_buf();
@@ -382,10 +445,6 @@ pub fn find_engine_exe() -> Option<PathBuf> {
         }
     }
     None
-}
-
-pub fn udp_port_free(port: u16) -> bool {
-    std::net::UdpSocket::bind(("127.0.0.1", port)).is_ok()
 }
 
 /// 服务健康探活:测 80 端口(zoffline 的 CDN,纯 HTTP)。
@@ -418,8 +477,22 @@ pub fn port_owner(port: u16, proto: &str) -> Option<String> {
         }
         None
     } else {
-        let (_ok, text) = run_cmd(Command::new("lsof").args(["-i", &format!(":{port}")]));
-        text.lines().skip(1).next().map(|l| l.to_string())
+        let mut cmd = Command::new("/usr/sbin/lsof");
+        cmd.args(["-nP", "-a", &format!("-i{}:{port}", proto.to_ascii_uppercase())]);
+        if proto == "tcp" {
+            cmd.arg("-sTCP:LISTEN");
+        }
+        let (ok, text) = run_cmd(&mut cmd);
+        if !ok {
+            return None;
+        }
+        text.lines()
+            .skip(1)
+            .filter(|line| !line.contains("->"))
+            .find_map(|line| {
+                let mut columns = line.split_whitespace();
+                Some(format!("{} (PID {})", columns.next()?, columns.next()?))
+            })
     }
 }
 

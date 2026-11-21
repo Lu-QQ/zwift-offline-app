@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api, type CheckItem, type Settings, type StepResult } from "../api";
 
+const isMac = navigator.platform.startsWith("Mac");
 const settings = ref<Settings>({ engine_path: null, engine_exe: null, zwift_dir: null, strava_port: 8000 });
 const items = ref<CheckItem[]>([]);
 const scanning = ref(false);
@@ -43,7 +44,7 @@ async function configure() {
     const results = await api.configApply();
     configSteps.value = results;
     if (results.some((r) => r.status === "error")) {
-      error.value = "有步骤失败,请按提示处理(常见原因:未以管理员身份运行)";
+      error.value = "有步骤失败，请查看下方的执行结果。";
     } else {
       message.value = "配置完成!可以到「服务控制」页启动 zoffline 了。";
     }
@@ -140,7 +141,7 @@ async function autoInstallPython() {
 function openPythonDownload(which: "official" | "mirror") {
   api.openUrl(
     which === "official"
-      ? "https://www.python.org/downloads/windows/"
+      ? (isMac ? "https://www.python.org/downloads/macos/" : "https://www.python.org/downloads/windows/")
       : "https://mirrors.huaweicloud.com/python/3.12.9/python-3.12.9-amd64.exe"
   );
 }
@@ -250,7 +251,14 @@ onUnmounted(() => unlisten?.());
       </p>
     </div>
 
-    <div v-if="pythonMissing" class="note red" style="margin-top: 14px">
+    <div v-if="pythonMissing && isMac" class="note red" style="margin-top: 14px">
+      <b>缺少可用的 Python</b>
+      <p>安装 Python 3.11 或更新版本后，点击「重新检测」。</p>
+      <div class="actions">
+        <button class="btn ghost" @click="openPythonDownload('official')">打开 Python 官网 macOS 下载页</button>
+      </div>
+    </div>
+    <div v-else-if="pythonMissing" class="note red" style="margin-top: 14px">
       <b>缺 Python 3</b> —— 三种解决办法(任选其一):
       <div class="actions" style="margin-top: 10px">
         <button class="btn" :disabled="installingPython" @click="autoInstallPython">
