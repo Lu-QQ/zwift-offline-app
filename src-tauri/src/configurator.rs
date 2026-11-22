@@ -376,10 +376,13 @@ pub fn restore_run(app: AppHandle, s: tauri::State<'_, crate::AppState>) -> Vec<
 
 // ---------- 引擎一键下载 ----------
 
-/// 引擎源码包:fatsbrown fork 是活跃维护版,上游 zoffline 已弃维;最后直连兜底
+/// 引擎源码包:默认拉自家 fork Lu-QQ/zwift-offline(定期从 fatsbrown 上游同步,含 Zwift Video 实景路线支持);
+/// fatsbrown 仓库最后直连兜底;镜像加速在前
 const ENGINE_ZIP_MIRRORS: &[&str] = &[
+    "https://ghfast.top/https://github.com/Lu-QQ/zwift-offline/archive/refs/heads/master.zip",
+    "https://gh-proxy.com/https://github.com/Lu-QQ/zwift-offline/archive/refs/heads/master.zip",
+    "https://github.com/Lu-QQ/zwift-offline/archive/refs/heads/master.zip",
     "https://ghfast.top/https://github.com/fatsbrown/zwift-offline/archive/refs/heads/master.zip",
-    "https://gh-proxy.com/https://github.com/fatsbrown/zwift-offline/archive/refs/heads/master.zip",
     "https://github.com/fatsbrown/zwift-offline/archive/refs/heads/master.zip",
 ];
 

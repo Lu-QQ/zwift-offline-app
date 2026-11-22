@@ -6,8 +6,8 @@
    - Windows 建议 `C:\Users\<用户>\AppData\Local\zwift-offline` 或 `D:\zwift-offline`
    - macOS 建议 `~/zwift-offline`
    - 复制源:`~/.agents/skills/zoffline-setup/assets/zwift-offline`(复制,别原地用;用户目录里的才能装 storage 数据)
-2. 若用户要更新引擎:下载 `https://ghfast.top/https://github.com/fatsbrown/zwift-offline/archive/refs/heads/master.zip`(失败换 `https://gh-proxy.com/...` 前缀,再失败 GitHub 直连),解压后**保留旧目录的 storage/** 只换代码。
-   fatsbrown fork 是活跃维护版;上游 zoffline/zoffline 已弃维。
+2. 若用户要更新引擎:下载 `https://ghfast.top/https://github.com/Lu-QQ/zwift-offline/archive/refs/heads/master.zip`(失败换 `https://gh-proxy.com/...` 前缀,再失败 GitHub 直连;Lu-QQ fork 失效时改用 fatsbrown 原仓库),解压后**保留旧目录的 storage/** 只换代码。
+   Lu-QQ/zwift-offline 是自家 fork(定期从 fatsbrown 同步,含 Zwift Video 实景路线支持);fatsbrown fork 是活跃维护上游;上游 zoffline/zoffline 已弃维。
 
 ## Python(缺才装)
 

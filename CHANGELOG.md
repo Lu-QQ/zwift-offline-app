@@ -1,5 +1,10 @@
 # 更新日志
 
+## v1.0.8
+
+- 🎬 内置引擎同步至 fatsbrown v1.0.169052(2026-11-17):支持 **Zwift Video 实景路线**(16-bit 道路 ID 修复 + 视频路线起点线,离线可骑 21 条 4K 真道路路线)、Matrix 聊天、单人 blob、解锁自行车升级等
+- 🔀 「一键下载引擎」下载源切换到**自家 fork [Lu-QQ/zwift-offline](https://github.com/Lu-QQ/zwift-offline)**(定期从 fatsbrown 上游同步):引擎源自己可控,不怕上游变动;原 fatsbrown 直连保留兜底
+
 ## v1.0.7
 
 - 🐛 修复:一键配置后只杀 ZwiftLauncher、漏杀游戏本体 Zwift.exe —— 旧客户端继续持有旧证书缓存导致"配置完还是连不上"
